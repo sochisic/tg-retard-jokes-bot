@@ -57,7 +57,6 @@ func main() {
 	go http.ListenAndServe(":8080", nil)
 	fmt.Println("start listen :8080")
 
-	// получаем все обновления из канала updates
 	for update := range updates {
 		fmt.Printf("[%s] %s \n", update.Message.From.UserName, update.Message.Text)
 		switch update.Message.Text {
@@ -81,16 +80,24 @@ func main() {
 
 			if len(pictures.Items) != 0 {
 				if val, ok := sessions[update.Message.Chat.ID]; ok {
-					bot.Send(tgbotapi.NewMessage(
-						update.Message.Chat.ID,
-						pictures.Items[val],
-					))
+					_, err := bot.Send(tgbotapi.NewPhotoShare(update.Message.Chat.ID, pictures.Items[val]))
+					if err != nil {
+						bot.Send(tgbotapi.NewMessage(
+							update.Message.Chat.ID,
+							"Случилась неудача, попробуй ещё раз",
+						))
+					}
+
 					sessions[update.Message.Chat.ID] = sessions[update.Message.Chat.ID] + 1
 				} else {
-					bot.Send(tgbotapi.NewMessage(
-						update.Message.Chat.ID,
-						pictures.Items[0],
-					))
+					_, err := bot.Send(tgbotapi.NewPhotoShare(update.Message.Chat.ID, pictures.Items[val]))
+					if err != nil {
+						bot.Send(tgbotapi.NewMessage(
+							update.Message.Chat.ID,
+							"Случилась неудача, попробуй ещё раз",
+						))
+					}
+
 					sessions[update.Message.Chat.ID] = 1
 				}
 
@@ -113,7 +120,7 @@ func main() {
 		default:
 			bot.Send(tgbotapi.NewMessage(
 				update.Message.Chat.ID,
-				`Хочешь немного приколов для даунов? (да или нет)`,
+				`Хочешь немного приколов для даунов?`,
 			))
 		}
 	}
