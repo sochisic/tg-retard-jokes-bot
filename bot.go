@@ -31,6 +31,7 @@ type User struct {
 }
 
 type Users map[int64]*User
+type Users map[int]*User
 
 func init() {
 	if err := godotenv.Load(); err != nil {
@@ -38,6 +39,7 @@ func init() {
 	}
 }
 
+var users = make(Users)
 func main() {
 	BotToken, exists := os.LookupEnv("TG_BOT_TOKEN")
 	if !exists {
@@ -49,8 +51,6 @@ func main() {
 		log.Fatal("WebhookURL is required")
 	}
 
-	sessions := make(map[int64]int)
-	users := make(Users)
 	pictures := Pictures{}
 
 	bot, err := tgbotapi.NewBotAPI(BotToken)
@@ -75,11 +75,11 @@ func main() {
 		fmt.Printf("[%s] %s \n", update.Message.From.UserName, update.Message.Text)
 		welcomeMessage := "Псссст, я смотрю ты первый раз тут, хочешь немного приколов для даунов?"
 
-		if _, ok := users[update.Message.Chat.ID]; ok {
-			users[update.Message.Chat.ID].ChatArchive = append(users[update.Message.Chat.ID].ChatArchive, update.Message.Text)
+		if _, ok := users[update.Message.From.ID]; ok {
+			users[update.Message.From.ID].ChatArchive = append(users[update.Message.From.ID].ChatArchive, update.Message.Text)
 			welcomeMessage = fmt.Sprintf("О привет %s ты вернулся, хочешь ещё приколов для даунов?", update.Message.From.UserName)
 		} else {
-			users[update.Message.Chat.ID] = &User{
+			users[update.Message.From.ID] = &User{
 				ID:           update.Message.From.ID,
 				AlreadyBeen:  true,
 				JokesExpires: time.Now().Add(72 * time.Hour),
@@ -87,7 +87,7 @@ func main() {
 				FirstName:    update.Message.From.FirstName,
 				LastName:     update.Message.From.LastName,
 			}
-			users[update.Message.Chat.ID].ChatArchive = append(users[update.Message.Chat.ID].ChatArchive, update.Message.Text)
+			users[update.Message.From.ID].ChatArchive = append(users[update.Message.From.ID].ChatArchive, update.Message.Text)
 		}
 
 		switch update.Message.Text {
@@ -102,6 +102,7 @@ func main() {
 				pictures.Items = x.Find("#post_list .postContainer .article div.post_top div.post_content div.image img").Attrs("src")
 				pictures.ExpiresAt = SetExpiresIn15min()
 			}
+			if _, ok := users[update.Message.From.ID]; ok {
 
 			if pictures.IsExpired() {
 				fmt.Println("pictures is expired, updating pictures array")
