@@ -16,8 +16,22 @@ const url = "http://joyreactor.cc/tag/%23%D0%9F%D1%80%D0%B8%D0%BA%D0%BE%D0%BB%D1
 
 type Pictures struct {
 	Items     []string
-	expiresAt time.Time
+	ExpiresAt time.Time
 }
+
+type User struct {
+	ID           int
+	UserName     string
+	FirstName    string
+	LastName     string
+	SeenJokes    []string
+	JokesExpires time.Time
+	AlreadyBeen  bool
+	ChatArchive  []string
+}
+
+type Users map[int64]*User
+type Users map[int]*User
 
 func init() {
 	if err := godotenv.Load(); err != nil {
@@ -25,6 +39,7 @@ func init() {
 	}
 }
 
+var users = make(Users)
 func main() {
 	BotToken, exists := os.LookupEnv("TG_BOT_TOKEN")
 	if !exists {
@@ -36,7 +51,6 @@ func main() {
 		log.Fatal("WebhookURL is required")
 	}
 
-	sessions := make(map[int64]int)
 	pictures := Pictures{}
 
 	bot, err := tgbotapi.NewBotAPI(BotToken)
@@ -59,6 +73,23 @@ func main() {
 
 	for update := range updates {
 		fmt.Printf("[%s] %s \n", update.Message.From.UserName, update.Message.Text)
+		welcomeMessage := "Псссст, я смотрю ты первый раз тут, хочешь немного приколов для даунов?"
+
+		if _, ok := users[update.Message.From.ID]; ok {
+			users[update.Message.From.ID].ChatArchive = append(users[update.Message.From.ID].ChatArchive, update.Message.Text)
+			welcomeMessage = fmt.Sprintf("О привет %s ты вернулся, хочешь ещё приколов для даунов?", update.Message.From.UserName)
+		} else {
+			users[update.Message.From.ID] = &User{
+				ID:           update.Message.From.ID,
+				AlreadyBeen:  true,
+				JokesExpires: time.Now().Add(72 * time.Hour),
+				UserName:     update.Message.From.UserName,
+				FirstName:    update.Message.From.FirstName,
+				LastName:     update.Message.From.LastName,
+			}
+			users[update.Message.From.ID].ChatArchive = append(users[update.Message.From.ID].ChatArchive, update.Message.Text)
+		}
+
 		switch update.Message.Text {
 		case "да", "Да", "yes", "Yes", "y", "д":
 			x, err := goquery.ParseUrl(url)
@@ -69,13 +100,14 @@ func main() {
 			if len(pictures.Items) == 0 {
 				fmt.Println("pictures not found, updating pictures array")
 				pictures.Items = x.Find("#post_list .postContainer .article div.post_top div.post_content div.image img").Attrs("src")
-				pictures.expiresAt = expiresIn15min()
+				pictures.ExpiresAt = SetExpiresIn15min()
 			}
+			if _, ok := users[update.Message.From.ID]; ok {
 
-			if time.Now().After(pictures.expiresAt) {
+			if pictures.IsExpired() {
 				fmt.Println("pictures is expired, updating pictures array")
 				pictures.Items = x.Find("#post_list .postContainer .article div.post_top div.post_content div.image img").Attrs("src")
-				pictures.expiresAt = expiresIn15min()
+				pictures.ExpiresAt = SetExpiresIn15min()
 			}
 
 			if len(pictures.Items) != 0 {
@@ -103,7 +135,7 @@ func main() {
 
 				bot.Send(tgbotapi.NewMessage(
 					update.Message.Chat.ID,
-					"хочешь ещё? ",
+					"хочешь ещё?",
 				))
 
 			} else {
@@ -112,7 +144,7 @@ func main() {
 					"Нету приколов для даунов :/",
 				))
 			}
-		case "нет":
+		case "нет", "н", "no", "No", "Нет":
 			bot.Send(tgbotapi.NewMessage(
 				update.Message.Chat.ID,
 				"Возвращайся когда захочешь",
@@ -120,12 +152,22 @@ func main() {
 		default:
 			bot.Send(tgbotapi.NewMessage(
 				update.Message.Chat.ID,
-				`Хочешь немного приколов для даунов?`,
+				welcomeMessage,
 			))
+
+			for k, v := range users {
+				// fmt.Printf("key[%s] value[%s]\n", k, v)
+				fmt.Printf("key[%v] value[%v]\n", k, v.UserName)
+			}
+
 		}
 	}
 }
 
-func expiresIn15min() time.Time {
+func SetExpiresIn15min() time.Time {
 	return time.Now().Add(15 * time.Minute)
+}
+
+func (pic *Pictures) IsExpired() bool {
+	return time.Now().After(pic.ExpiresAt)
 }
