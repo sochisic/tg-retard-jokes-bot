@@ -5,19 +5,12 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"tg-retards-joke-bot/pictures"
 	"time"
 
 	"github.com/joho/godotenv"
-	"github.com/opesun/goquery"
 	tgbotapi "gopkg.in/telegram-bot-api.v4"
 )
-
-const url = "http://joyreactor.cc/tag/%23%D0%9F%D1%80%D0%B8%D0%BA%D0%BE%D0%BB%D1%8B+%D0%B4%D0%BB%D1%8F+%D0%B4%D0%B0%D1%83%D0%BD%D0%BE%D0%B2"
-
-type Pictures struct {
-	Items     []string
-	ExpiresAt time.Time
-}
 
 type User struct {
 	ID           int
@@ -30,7 +23,6 @@ type User struct {
 	ChatArchive  []string
 }
 
-type Users map[int64]*User
 type Users map[int]*User
 
 func init() {
@@ -40,6 +32,8 @@ func init() {
 }
 
 var users = make(Users)
+var pics = pictures.Pictures{}
+
 func main() {
 	BotToken, exists := os.LookupEnv("TG_BOT_TOKEN")
 	if !exists {
@@ -50,8 +44,6 @@ func main() {
 	if !exists {
 		log.Fatal("WebhookURL is required")
 	}
-
-	pictures := Pictures{}
 
 	bot, err := tgbotapi.NewBotAPI(BotToken)
 	if err != nil {
@@ -92,58 +84,47 @@ func main() {
 
 		switch update.Message.Text {
 		case "да", "Да", "yes", "Yes", "y", "д":
-			x, err := goquery.ParseUrl(url)
-			if err != nil {
-				panic(err)
-			}
-
-			if len(pictures.Items) == 0 {
-				fmt.Println("pictures not found, updating pictures array")
-				pictures.Items = x.Find("#post_list .postContainer .article div.post_top div.post_content div.image img").Attrs("src")
-				pictures.ExpiresAt = SetExpiresIn15min()
-			}
 			if _, ok := users[update.Message.From.ID]; ok {
 
-			if pictures.IsExpired() {
-				fmt.Println("pictures is expired, updating pictures array")
-				pictures.Items = x.Find("#post_list .postContainer .article div.post_top div.post_content div.image img").Attrs("src")
-				pictures.ExpiresAt = SetExpiresIn15min()
-			}
-
-			if len(pictures.Items) != 0 {
-				if val, ok := sessions[update.Message.Chat.ID]; ok {
-					_, err := bot.Send(tgbotapi.NewPhotoShare(update.Message.Chat.ID, pictures.Items[val]))
-					if err != nil {
-						bot.Send(tgbotapi.NewMessage(
-							update.Message.Chat.ID,
-							"Случилась неудача, попробуй ещё раз",
-						))
-					}
-
-					sessions[update.Message.Chat.ID] = sessions[update.Message.Chat.ID] + 1
-				} else {
-					_, err := bot.Send(tgbotapi.NewPhotoShare(update.Message.Chat.ID, pictures.Items[val]))
-					if err != nil {
-						bot.Send(tgbotapi.NewMessage(
-							update.Message.Chat.ID,
-							"Случилась неудача, попробуй ещё раз",
-						))
-					}
-
-					sessions[update.Message.Chat.ID] = 1
+				pic, err := getNotSeenPicture(users[update.Message.From.ID].SeenJokes)
+				if err != nil {
+					bot.Send(tgbotapi.NewMessage(
+						update.Message.Chat.ID,
+						"Случилась неудача, попробуй ещё раз",
+					))
 				}
 
-				bot.Send(tgbotapi.NewMessage(
-					update.Message.Chat.ID,
-					"хочешь ещё?",
-				))
-
+				_, error := bot.Send(tgbotapi.NewPhotoShare(update.Message.Chat.ID, pic))
+				if error != nil {
+					bot.Send(tgbotapi.NewMessage(
+						update.Message.Chat.ID,
+						"Случилась неудача, попробуй ещё раз",
+					))
+				}
+				users[update.Message.From.ID].SeenJokes = append(users[update.Message.From.ID].SeenJokes, pic)
 			} else {
-				bot.Send(tgbotapi.NewMessage(
-					update.Message.Chat.ID,
-					"Нету приколов для даунов :/",
-				))
+				pic, error := pics.GetPicture()
+				if error != nil {
+					bot.Send(tgbotapi.NewMessage(
+						update.Message.Chat.ID,
+						"Случилась неудача, попробуй ещё раз",
+					))
+				}
+
+				_, err := bot.Send(tgbotapi.NewPhotoShare(update.Message.Chat.ID, pic))
+				if err != nil {
+					bot.Send(tgbotapi.NewMessage(
+						update.Message.Chat.ID,
+						"Случилась неудача, попробуй ещё раз",
+					))
+				}
 			}
+
+			bot.Send(tgbotapi.NewMessage(
+				update.Message.Chat.ID,
+				"хочешь ещё?",
+			))
+
 		case "нет", "н", "no", "No", "Нет":
 			bot.Send(tgbotapi.NewMessage(
 				update.Message.Chat.ID,
@@ -156,18 +137,35 @@ func main() {
 			))
 
 			for k, v := range users {
-				// fmt.Printf("key[%s] value[%s]\n", k, v)
 				fmt.Printf("key[%v] value[%v]\n", k, v.UserName)
+				fmt.Printf("key[%v] value[%v]\n", k, v.FirstName)
+				fmt.Printf("key[%v] value[%v]\n", k, v.LastName)
+				fmt.Printf("key[%v] value[%v]\n", k, v.SeenJokes)
 			}
 
 		}
 	}
 }
 
-func SetExpiresIn15min() time.Time {
-	return time.Now().Add(15 * time.Minute)
+func getNotSeenPicture(seen []string) (string, error) {
+	pic, err := pics.GetPicture()
+
+	if err != nil {
+		return "", err
+	}
+
+	for contains(seen, pic) {
+		pic, err = pics.GetPicture()
+	}
+
+	return pic, nil
 }
 
-func (pic *Pictures) IsExpired() bool {
-	return time.Now().After(pic.ExpiresAt)
+func contains(s []string, e string) bool {
+	for _, a := range s {
+		if a == e {
+			return true
+		}
+	}
+	return false
 }
