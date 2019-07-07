@@ -21,6 +21,7 @@ type User struct {
 	JokesExpires time.Time
 	AlreadyBeen  bool
 	ChatArchive  []string
+	isAdmin      bool
 }
 
 type Users map[int]*User
