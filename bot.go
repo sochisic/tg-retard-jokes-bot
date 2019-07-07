@@ -31,7 +31,7 @@ func init() {
 	}
 }
 
-var users = make(Users)
+var users = Users{}
 var pics = pictures.Pictures{}
 
 func main() {
@@ -74,19 +74,20 @@ func main() {
 			users[update.Message.From.ID] = &User{
 				ID:           update.Message.From.ID,
 				AlreadyBeen:  true,
-				JokesExpires: time.Now().Add(72 * time.Hour),
+				JokesExpires: time.Now().Add(240 * time.Hour),
 				UserName:     update.Message.From.UserName,
 				FirstName:    update.Message.From.FirstName,
 				LastName:     update.Message.From.LastName,
+				ChatArchive:  []string{update.Message.Text},
 			}
-			users[update.Message.From.ID].ChatArchive = append(users[update.Message.From.ID].ChatArchive, update.Message.Text)
 		}
 
 		switch update.Message.Text {
+
 		case "да", "Да", "yes", "Yes", "y", "д":
 			if _, ok := users[update.Message.From.ID]; ok {
 
-				pic, err := getNotSeenPicture(users[update.Message.From.ID].SeenJokes)
+				pic, err := getNotSeenPicture(users[update.Message.From.ID].SeenJokes, update.Message.From.ID)
 				if err != nil {
 					bot.Send(tgbotapi.NewMessage(
 						update.Message.Chat.ID,
@@ -103,7 +104,7 @@ func main() {
 				}
 				users[update.Message.From.ID].SeenJokes = append(users[update.Message.From.ID].SeenJokes, pic)
 			} else {
-				pic, error := pics.GetPicture()
+				pic, error := pics.GetPicture(update.Message.From.ID)
 				if error != nil {
 					bot.Send(tgbotapi.NewMessage(
 						update.Message.Chat.ID,
@@ -147,15 +148,15 @@ func main() {
 	}
 }
 
-func getNotSeenPicture(seen []string) (string, error) {
-	pic, err := pics.GetPicture()
+func getNotSeenPicture(seen []string, id int) (string, error) {
+	pic, err := pics.GetPicture(id)
 
 	if err != nil {
 		return "", err
 	}
 
 	for contains(seen, pic) {
-		pic, err = pics.GetPicture()
+		pic, err = pics.GetPicture(id)
 	}
 
 	return pic, nil
