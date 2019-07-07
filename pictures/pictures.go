@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/opesun/goquery"
+	"github.com/rs/zerolog"
 )
 
 //Pictures provide methods for get pictures from url, changing pages and save seen history for each id
@@ -14,6 +15,7 @@ type Pictures struct {
 	ExpiresAt   time.Time
 	nextPageURL string
 	history     map[int]int
+	Logger      *zerolog.Logger
 }
 
 const firstPageURL = "/tag/%23%D0%9F%D1%80%D0%B8%D0%BA%D0%BE%D0%BB%D1%8B+%D0%B4%D0%BB%D1%8F+%D0%B4%D0%B0%D1%83%D0%BD%D0%BE%D0%B2"
@@ -31,7 +33,7 @@ func (p *Pictures) IsExpired() bool {
 
 //Update initiate updating Items
 func (p *Pictures) Update() {
-	fmt.Println("Pictures Updating...")
+	p.Logger.Info().Msg("Pictures Updating...")
 	x, err := goquery.ParseUrl(domain + firstPageURL)
 	if err != nil {
 		panic(err)
@@ -48,7 +50,7 @@ func (p *Pictures) Update() {
 
 // GetPicture represents new picture url, and initiate NextPage update if all pictures from current Items slice is taken
 func (p *Pictures) GetPicture(id int) (string, error) {
-	fmt.Println("Getting picture... forId: ", id)
+	p.Logger.Debug().Msgf("Getting picture... forId: %v", id)
 
 	if len(p.Items) == 0 || p.IsExpired() {
 		p.Update()

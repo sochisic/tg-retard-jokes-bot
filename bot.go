@@ -2,13 +2,14 @@ package main
 
 import (
 	"fmt"
-	"log"
 	"net/http"
 	"os"
 	"tg-retards-joke-bot/pictures"
 	"time"
 
 	"github.com/joho/godotenv"
+	"github.com/rs/zerolog"
+	"github.com/rs/zerolog/log"
 	tgbotapi "gopkg.in/telegram-bot-api.v4"
 )
 
@@ -31,19 +32,37 @@ func init() {
 	}
 }
 
+var sublogger = log.With().Str("component", "pictures").Logger().Output(zerolog.ConsoleWriter{Out: os.Stderr})
+
 var users = Users{}
-var pics = pictures.Pictures{}
+var pics = pictures.Pictures{Logger: &sublogger}
 
 func main() {
 	BotToken, exists := os.LookupEnv("TG_BOT_TOKEN")
 	if !exists {
-		log.Fatal("tg token is required")
+		log.Fatal().Msg("tg token is required")
 	}
 
 	WebhookURL, exists := os.LookupEnv("WEBHOOK_URL")
 	if !exists {
-		log.Fatal("WebhookURL is required")
+		log.Fatal().Msg("WebhookURL is required")
 	}
+
+	log.Logger = log.Output(zerolog.ConsoleWriter{Out: os.Stderr})
+	debug, exists := os.LookupEnv("DEBUG")
+	if !exists {
+		log.Print("DEBUG Env is missing set log level to INFO")
+		zerolog.SetGlobalLevel(zerolog.InfoLevel)
+	}
+	if debug == "true" {
+		log.Print("DEBUG Env variable 'true' set log level to DEBUG")
+		zerolog.SetGlobalLevel(zerolog.DebugLevel)
+	} else {
+		log.Print("DEBUG Env variable not 'true' set log level to INFO")
+		zerolog.SetGlobalLevel(zerolog.InfoLevel)
+	}
+
+	log.Print("Hello World")
 
 	bot, err := tgbotapi.NewBotAPI(BotToken)
 	if err != nil {
@@ -51,7 +70,7 @@ func main() {
 	}
 
 	// bot.Debug = true
-	fmt.Printf("Authorized on account %s\n", bot.Self.UserName)
+	log.Info().Str("Authorized on account:", bot.Self.UserName).Send()
 
 	_, err = bot.SetWebhook(tgbotapi.NewWebhook(WebhookURL))
 	if err != nil {
@@ -61,10 +80,10 @@ func main() {
 	updates := bot.ListenForWebhook("/")
 
 	go http.ListenAndServe(":8080", nil)
-	fmt.Println("start listen :8080")
+	log.Info().Msg("start listen :8080")
 
 	for update := range updates {
-		fmt.Printf("[%s] %s \n", update.Message.From.UserName, update.Message.Text)
+		log.Debug().Msgf("[%s] %s \n", update.Message.From.UserName, update.Message.Text)
 		welcomeMessage := "Псссст, я смотрю ты первый раз тут, хочешь немного приколов для даунов?"
 
 		if _, ok := users[update.Message.From.ID]; ok {
@@ -138,10 +157,10 @@ func main() {
 			))
 
 			for k, v := range users {
-				fmt.Printf("key[%v] value[%v]\n", k, v.UserName)
-				fmt.Printf("key[%v] value[%v]\n", k, v.FirstName)
-				fmt.Printf("key[%v] value[%v]\n", k, v.LastName)
-				fmt.Printf("key[%v] value[%v]\n", k, v.SeenJokes)
+				log.Debug().Msgf("key[%v] value[%v]\n", k, v.UserName)
+				log.Debug().Msgf("key[%v] value[%v]\n", k, v.FirstName)
+				log.Debug().Msgf("key[%v] value[%v]\n", k, v.LastName)
+				log.Debug().Msgf("key[%v] value[%v]\n", k, v.SeenJokes)
 			}
 
 		}
