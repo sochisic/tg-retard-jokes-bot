@@ -164,10 +164,9 @@ func main() {
 			))
 
 			for k, v := range users {
-				log.Debug().Msgf("key[%v] value[%v]\n", k, v.UserName)
-				log.Debug().Msgf("key[%v] value[%v]\n", k, v.FirstName)
-				log.Debug().Msgf("key[%v] value[%v]\n", k, v.LastName)
-				log.Debug().Msgf("key[%v] value[%v]\n", k, v.SeenJokes)
+				log.Debug().Msgf("ID=%v UserName=%v\n", k, v.UserName)
+				log.Debug().Msgf("ID=%v FirstName=%v\n", k, v.FirstName)
+				log.Debug().Msgf("ID=%v LastName=%v\n", k, v.LastName)
 			}
 
 		}
@@ -176,13 +175,17 @@ func main() {
 
 func getNotSeenPicture(seen []string, id int) (string, error) {
 	pic, err := pics.GetPicture(id)
-
 	if err != nil {
+		log.Error().Err(err).Send()
 		return "", err
 	}
 
 	for contains(seen, pic) {
 		pic, err = pics.GetPicture(id)
+		if err != nil {
+			log.Error().Err(err).Send()
+			return "", err
+		}
 	}
 
 	return pic, nil
