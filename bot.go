@@ -38,6 +38,8 @@ var users = Users{}
 var pics = pictures.Pictures{Logger: &sublogger}
 
 func main() {
+	log.Logger = log.Output(zerolog.ConsoleWriter{Out: os.Stderr})
+
 	BotToken, exists := os.LookupEnv("TG_BOT_TOKEN")
 	if !exists {
 		log.Fatal().Msg("tg token is required")
@@ -48,29 +50,34 @@ func main() {
 		log.Fatal().Msg("WebhookURL is required")
 	}
 
-	log.Logger = log.Output(zerolog.ConsoleWriter{Out: os.Stderr})
-	debug, exists := os.LookupEnv("DEBUG")
+	WebhookPort, exists := os.LookupEnv("WEBHOOK_PORT")
 	if !exists {
-		log.Print("DEBUG Env is missing set log level to INFO")
-		zerolog.SetGlobalLevel(zerolog.InfoLevel)
-	}
-	if debug == "true" {
-		log.Print("DEBUG Env variable 'true' set log level to DEBUG")
-		zerolog.SetGlobalLevel(zerolog.DebugLevel)
-	} else {
-		log.Print("DEBUG Env variable not 'true' set log level to INFO")
-		zerolog.SetGlobalLevel(zerolog.InfoLevel)
+		log.Warn().Str("WEBHOOK_PORT env variable not defined! Using default port", "8080").Send()
+		WebhookPort = "8080"
 	}
 
-	log.Print("Hello World")
+	debug, _ := os.LookupEnv("DEBUG")
+	if debug == "true" {
+		log.Info().Str("DEBUG Env variable 'true' set log level to", "DEBUG").Send()
+		zerolog.SetGlobalLevel(zerolog.DebugLevel)
+	} else {
+		log.Info().Str("DEBUG Env variable missing or 'false' set log level to", "INFO").Send()
+		zerolog.SetGlobalLevel(zerolog.InfoLevel)
+	}
 
 	bot, err := tgbotapi.NewBotAPI(BotToken)
 	if err != nil {
+		log.Panic().Err(err).Send()
 		panic(err)
 	}
 
-	// bot.Debug = true
-	log.Info().Str("Authorized on account:", bot.Self.UserName).Send()
+	botDebug, _ := os.LookupEnv("BOT_DEBUG")
+	if botDebug == "true" {
+		log.Print("DEBUG Env variable 'true' set log level to DEBUG")
+		bot.Debug = true
+	}
+
+	log.Info().Str("Authorized on account", bot.Self.UserName).Send()
 
 	_, err = bot.SetWebhook(tgbotapi.NewWebhook(WebhookURL))
 	if err != nil {
@@ -79,8 +86,8 @@ func main() {
 
 	updates := bot.ListenForWebhook("/")
 
-	go http.ListenAndServe(":8080", nil)
-	log.Info().Msg("start listen :8080")
+	go http.ListenAndServe(":"+WebhookPort, nil)
+	log.Info().Str("Start listen port", WebhookPort).Send()
 
 	for update := range updates {
 		log.Debug().Msgf("[%s] %s \n", update.Message.From.UserName, update.Message.Text)

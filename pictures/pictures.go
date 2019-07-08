@@ -2,7 +2,6 @@ package pictures
 
 import (
 	"errors"
-	"fmt"
 	"time"
 
 	"github.com/opesun/goquery"
@@ -44,7 +43,7 @@ func (p *Pictures) Update() {
 	p.history = map[int]int{}
 
 	if len(p.Items) != 0 {
-		fmt.Println("Pictures Updated successfully")
+		p.Logger.Print("Pictures Updated successfully")
 	}
 }
 
@@ -55,12 +54,13 @@ func (p *Pictures) GetPicture(id int) (string, error) {
 	if len(p.Items) == 0 || p.IsExpired() {
 		p.Update()
 		if len(p.Items) == 0 {
+			p.Logger.Error().Msg("No pictures after update()")
 			return "", errors.New("Нет картинок почему то :/")
 		}
 	}
 
 	if val, ok := p.history[id]; ok {
-		fmt.Println("This id already stored", id, val)
+		p.Logger.Debug().Msgf("Id: %v already stored", id)
 		if len(p.Items)-1 == val {
 			p.NextPage()
 		}
@@ -69,7 +69,7 @@ func (p *Pictures) GetPicture(id int) (string, error) {
 		return p.Items[val+1], nil
 	}
 
-	fmt.Println("This id is new", id)
+	p.Logger.Debug().Msgf("Id: %v is new - store to history", id)
 	p.history[id] = 0
 	return p.Items[0], nil
 }
@@ -81,15 +81,16 @@ func (p *Pictures) GetHistory() map[int]int {
 
 // NextPage request new Items and change nextPageUrl as well
 func (p *Pictures) NextPage() {
-	fmt.Println("Getting new page...", len(p.Items))
+	p.Logger.Debug().Int("Getting new page... items len", len(p.Items)).Send()
+
 	x, err := goquery.ParseUrl(domain + p.nextPageURL)
 	if err != nil {
+		p.Logger.Panic().Err(err).Send()
 		panic(err)
 	}
 
 	p.Items = append(p.Items, x.Find("#post_list .postContainer .article div.post_top div.post_content div.image img").Attrs("src")...)
 	p.nextPageURL = x.Find("#Pagination .pagination_main a").Attrs("href")[1]
 
-	fmt.Println("Successfully got new page", len(p.Items))
-	// fmt.Println("nextPageUrl", p.nextPageUrl)
+	p.Logger.Debug().Int("Successfully got new page... items len", len(p.Items)).Send()
 }
