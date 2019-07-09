@@ -2,7 +2,6 @@ package main
 
 import (
 	"fmt"
-	"log"
 	"net/http"
 	"os"
 	"time"
@@ -10,6 +9,8 @@ import (
 	"github.com/sochisic/tg-retard-jokes-bot/pictures"
 
 	"github.com/joho/godotenv"
+	"github.com/rs/zerolog"
+	"github.com/rs/zerolog/log"
 	tgbotapi "gopkg.in/telegram-bot-api.v4"
 )
 
@@ -28,31 +29,56 @@ type Users map[int]*User
 
 func init() {
 	if err := godotenv.Load(); err != nil {
-		log.Print("No .env file found")
+		log.Warn().Msg("No .env file found")
 	}
 }
 
+var sublogger = log.With().Str("component", "pictures").Logger().Output(zerolog.ConsoleWriter{Out: os.Stderr})
+
 var users = Users{}
-var pics = pictures.Pictures{}
+var pics = pictures.Pictures{Logger: &sublogger}
 
 func main() {
+	log.Logger = log.Output(zerolog.ConsoleWriter{Out: os.Stderr})
+
 	BotToken, exists := os.LookupEnv("TG_BOT_TOKEN")
 	if !exists {
-		log.Fatal("tg token is required")
+		log.Fatal().Msg("tg token is required")
 	}
 
 	WebhookURL, exists := os.LookupEnv("WEBHOOK_URL")
 	if !exists {
-		log.Fatal("WebhookURL is required")
+		log.Fatal().Msg("WebhookURL is required")
+	}
+
+	WebhookPort, exists := os.LookupEnv("WEBHOOK_PORT")
+	if !exists {
+		log.Warn().Str("WEBHOOK_PORT env variable not defined! Using default port", "8080").Send()
+		WebhookPort = "8080"
+	}
+
+	debug, _ := os.LookupEnv("DEBUG")
+	if debug == "true" {
+		log.Info().Str("DEBUG Env variable 'true' set log level to", "DEBUG").Send()
+		zerolog.SetGlobalLevel(zerolog.DebugLevel)
+	} else {
+		log.Info().Str("DEBUG Env variable missing or 'false' set log level to", "INFO").Send()
+		zerolog.SetGlobalLevel(zerolog.InfoLevel)
 	}
 
 	bot, err := tgbotapi.NewBotAPI(BotToken)
 	if err != nil {
+		log.Panic().Err(err).Send()
 		panic(err)
 	}
 
-	// bot.Debug = true
-	fmt.Printf("Authorized on account %s\n", bot.Self.UserName)
+	botDebug, _ := os.LookupEnv("BOT_DEBUG")
+	if botDebug == "true" {
+		log.Print("DEBUG Env variable 'true' set log level to DEBUG")
+		bot.Debug = true
+	}
+
+	log.Info().Str("Authorized on account", bot.Self.UserName).Send()
 
 	_, err = bot.SetWebhook(tgbotapi.NewWebhook(WebhookURL))
 	if err != nil {
@@ -61,11 +87,11 @@ func main() {
 
 	updates := bot.ListenForWebhook("/")
 
-	go http.ListenAndServe(":8080", nil)
-	fmt.Println("start listen :8080")
+	go http.ListenAndServe(":"+WebhookPort, nil)
+	log.Info().Str("Start listen port", WebhookPort).Send()
 
 	for update := range updates {
-		fmt.Printf("[%s] %s \n", update.Message.From.UserName, update.Message.Text)
+		log.Debug().Msgf("[%s] %s \n", update.Message.From.UserName, update.Message.Text)
 		welcomeMessage := "Псссст, я смотрю ты первый раз тут, хочешь немного приколов для даунов?"
 
 		if _, ok := users[update.Message.From.ID]; ok {
@@ -139,10 +165,9 @@ func main() {
 			))
 
 			for k, v := range users {
-				fmt.Printf("key[%v] value[%v]\n", k, v.UserName)
-				fmt.Printf("key[%v] value[%v]\n", k, v.FirstName)
-				fmt.Printf("key[%v] value[%v]\n", k, v.LastName)
-				fmt.Printf("key[%v] value[%v]\n", k, v.SeenJokes)
+				log.Debug().Msgf("ID=%v UserName=%v\n", k, v.UserName)
+				log.Debug().Msgf("ID=%v FirstName=%v\n", k, v.FirstName)
+				log.Debug().Msgf("ID=%v LastName=%v\n", k, v.LastName)
 			}
 
 		}
@@ -151,13 +176,17 @@ func main() {
 
 func getNotSeenPicture(seen []string, id int) (string, error) {
 	pic, err := pics.GetPicture(id)
-
 	if err != nil {
+		log.Error().Err(err).Send()
 		return "", err
 	}
 
 	for contains(seen, pic) {
 		pic, err = pics.GetPicture(id)
+		if err != nil {
+			log.Error().Err(err).Send()
+			return "", err
+		}
 	}
 
 	return pic, nil
