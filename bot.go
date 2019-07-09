@@ -29,7 +29,7 @@ type Users map[int]*User
 
 func init() {
 	if err := godotenv.Load(); err != nil {
-		log.Print("No .env file found")
+		log.Warn().Msg("No .env file found")
 	}
 }
 

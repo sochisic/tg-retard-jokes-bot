@@ -32,7 +32,7 @@ func (p *Pictures) IsExpired() bool {
 
 //Update initiate updating Items
 func (p *Pictures) Update() {
-	p.Logger.Info().Msg("Pictures Updating...")
+	p.Logger.Debug().Msg("Pictures Updating...")
 	x, err := goquery.ParseUrl(domain + firstPageURL)
 	if err != nil {
 		panic(err)
