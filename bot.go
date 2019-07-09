@@ -4,8 +4,9 @@ import (
 	"fmt"
 	"net/http"
 	"os"
-	"tg-retards-joke-bot/pictures"
 	"time"
+
+	"github.com/sochisic/tg-retard-jokes-bot/pictures"
 
 	"github.com/joho/godotenv"
 	"github.com/rs/zerolog"
