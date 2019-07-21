@@ -13,8 +13,17 @@ type Pictures struct {
 	Items       []string
 	ExpiresAt   time.Time
 	nextPageURL string
-	history     map[int]int
+	urlHistory  map[int][]string
 	Logger      *zerolog.Logger
+}
+
+func contains(s []string, e string) bool {
+	for _, a := range s {
+		if a == e {
+			return true
+		}
+	}
+	return false
 }
 
 const firstPageURL = "/tag/%23%D0%9F%D1%80%D0%B8%D0%BA%D0%BE%D0%BB%D1%8B+%D0%B4%D0%BB%D1%8F+%D0%B4%D0%B0%D1%83%D0%BD%D0%BE%D0%B2"
@@ -39,8 +48,8 @@ func (p *Pictures) Update() {
 	}
 	p.Items = x.Find("#post_list .postContainer .article div.post_top div.post_content div.image img").Attrs("src")
 	p.nextPageURL = x.Find("#Pagination .pagination_main a").Attr("href")
-	p.ExpiresAt = time.Now().Add(5 * time.Hour)
-	p.history = map[int]int{}
+	p.ExpiresAt = time.Now().Add(1 * time.Hour)
+	p.urlHistory = make(map[int][]string, 0)
 
 	if len(p.Items) != 0 {
 		p.Logger.Print("Pictures Updated successfully")
@@ -59,28 +68,43 @@ func (p *Pictures) GetPicture(id int) (string, error) {
 		}
 	}
 
-	if val, ok := p.history[id]; ok {
+	if urlHistory, ok := p.urlHistory[id]; ok {
 		p.Logger.Debug().Msgf("Id: %v already stored", id)
-		if len(p.Items)-1 == val {
-			p.NextPage()
+
+		for _, pic := range p.Items {
+			if contains(urlHistory, pic) {
+				continue
+			} else {
+				p.urlHistory[id] = append(p.urlHistory[id], pic)
+				return pic, nil
+			}
 		}
 
-		p.history[id] = val + 1
-		return p.Items[val+1], nil
+		for {
+			newPage := p.nextPage()
+			for _, pic := range newPage {
+				if contains(urlHistory, pic) {
+					continue
+				} else {
+					p.urlHistory[id] = append(p.urlHistory[id], pic)
+					return pic, nil
+				}
+			}
+		}
 	}
 
 	p.Logger.Debug().Msgf("Id: %v is new - store to history", id)
-	p.history[id] = 0
+	p.urlHistory[id] = append(p.urlHistory[id], p.Items[0])
 	return p.Items[0], nil
 }
 
 //GetHistory provide history map
-func (p *Pictures) GetHistory() map[int]int {
-	return p.history
+func (p *Pictures) GetUrlHistory() map[int][]string {
+	return p.urlHistory
 }
 
 // NextPage request new Items and change nextPageUrl as well
-func (p *Pictures) NextPage() {
+func (p *Pictures) nextPage() (newItems []string) {
 	p.Logger.Debug().Int("Getting new page... items len", len(p.Items)).Send()
 
 	x, err := goquery.ParseUrl(domain + p.nextPageURL)
@@ -89,8 +113,12 @@ func (p *Pictures) NextPage() {
 		panic(err)
 	}
 
-	p.Items = append(p.Items, x.Find("#post_list .postContainer .article div.post_top div.post_content div.image img").Attrs("src")...)
+	newItems = x.Find("#post_list .postContainer .article div.post_top div.post_content div.image img").Attrs("src")
+
+	p.Items = append(p.Items, newItems...)
 	p.nextPageURL = x.Find("#Pagination .pagination_main a").Attrs("href")[1]
 
 	p.Logger.Debug().Int("Successfully got new page... items len", len(p.Items)).Send()
+
+	return
 }
