@@ -2,56 +2,112 @@ package main
 
 import (
 	"fmt"
-	"log"
 	"net/http"
 	"os"
-	"tg-retards-joke-bot/pictures"
 	"time"
 
+	"github.com/sochisic/tg-retard-jokes-bot/pictures"
+
 	"github.com/joho/godotenv"
+	"github.com/rs/zerolog"
+	"github.com/rs/zerolog/log"
 	tgbotapi "gopkg.in/telegram-bot-api.v4"
 )
 
 type User struct {
-	ID           int
+	UserID       int
+	ChatID       int64
 	UserName     string
 	FirstName    string
 	LastName     string
 	SeenJokes    []string
 	JokesExpires time.Time
-	AlreadyBeen  bool
 	ChatArchive  []string
 }
 
 type Users map[int]*User
 
+type ChatMessage struct {
+	UserID         int
+	ChatID         int64
+	Name           string
+	Text           string
+	WelcomeMessage string
+	IsCommand      bool
+}
+
+var YesOrNoOrTiredKeyboard = tgbotapi.NewInlineKeyboardMarkup(
+	tgbotapi.NewInlineKeyboardRow(
+		tgbotapi.NewInlineKeyboardButtonData("да", "да"),
+		tgbotapi.NewInlineKeyboardButtonData("нет", "нет"),
+		tgbotapi.NewInlineKeyboardButtonData("я устал", "/tired"),
+	),
+)
+
+var YesKeyboard = tgbotapi.NewInlineKeyboardMarkup(
+	tgbotapi.NewInlineKeyboardRow(
+		tgbotapi.NewInlineKeyboardButtonData("да", "да"),
+	),
+)
+
+var ReturnKeyboard = tgbotapi.NewInlineKeyboardMarkup(
+	tgbotapi.NewInlineKeyboardRow(
+		tgbotapi.NewInlineKeyboardButtonData("Я вернулся", "/start"),
+	),
+)
+
 func init() {
 	if err := godotenv.Load(); err != nil {
-		log.Print("No .env file found")
+		log.Warn().Msg("No .env file found")
 	}
 }
 
+var sublogger = log.With().Str("component", "pictures").Logger().Output(zerolog.ConsoleWriter{Out: os.Stderr})
+
 var users = Users{}
-var pics = pictures.Pictures{}
+var pics = pictures.Pictures{Logger: &sublogger}
 
 func main() {
+	log.Logger = log.Output(zerolog.ConsoleWriter{Out: os.Stderr})
+
 	BotToken, exists := os.LookupEnv("TG_BOT_TOKEN")
 	if !exists {
-		log.Fatal("tg token is required")
+		log.Fatal().Msg("tg token is required")
 	}
 
 	WebhookURL, exists := os.LookupEnv("WEBHOOK_URL")
 	if !exists {
-		log.Fatal("WebhookURL is required")
+		log.Fatal().Msg("WebhookURL is required")
+	}
+
+	WebhookPort, exists := os.LookupEnv("WEBHOOK_PORT")
+	if !exists {
+		log.Warn().Str("WEBHOOK_PORT env variable not defined! Using default port", "8080").Send()
+		WebhookPort = "8080"
+	}
+
+	debug, _ := os.LookupEnv("DEBUG")
+	if debug == "true" {
+		log.Info().Str("DEBUG Env variable 'true' set log level to", "DEBUG").Send()
+		zerolog.SetGlobalLevel(zerolog.DebugLevel)
+	} else {
+		log.Info().Str("DEBUG Env variable missing or 'false' set log level to", "INFO").Send()
+		zerolog.SetGlobalLevel(zerolog.InfoLevel)
 	}
 
 	bot, err := tgbotapi.NewBotAPI(BotToken)
 	if err != nil {
+		log.Panic().Err(err).Send()
 		panic(err)
 	}
 
-	// bot.Debug = true
-	fmt.Printf("Authorized on account %s\n", bot.Self.UserName)
+	botDebug, _ := os.LookupEnv("BOT_DEBUG")
+	if botDebug == "true" {
+		log.Print("DEBUG Env variable 'true' set log level to DEBUG")
+		bot.Debug = true
+	}
+
+	log.Info().Str("Authorized on account", bot.Self.UserName).Send()
 
 	_, err = bot.SetWebhook(tgbotapi.NewWebhook(WebhookURL))
 	if err != nil {
@@ -60,103 +116,114 @@ func main() {
 
 	updates := bot.ListenForWebhook("/")
 
-	go http.ListenAndServe(":8080", nil)
-	fmt.Println("start listen :8080")
+	go http.ListenAndServe(":"+WebhookPort, nil)
+	log.Info().Str("Start listen port", WebhookPort).Send()
 
 	for update := range updates {
-		fmt.Printf("[%s] %s \n", update.Message.From.UserName, update.Message.Text)
-		welcomeMessage := "Псссст, я смотрю ты первый раз тут, хочешь немного приколов для даунов?"
-
-		if _, ok := users[update.Message.From.ID]; ok {
-			users[update.Message.From.ID].ChatArchive = append(users[update.Message.From.ID].ChatArchive, update.Message.Text)
-			welcomeMessage = fmt.Sprintf("О привет %s ты вернулся, хочешь ещё приколов для даунов?", update.Message.From.UserName)
-		} else {
-			users[update.Message.From.ID] = &User{
-				ID:           update.Message.From.ID,
-				AlreadyBeen:  true,
-				JokesExpires: time.Now().Add(240 * time.Hour),
-				UserName:     update.Message.From.UserName,
-				FirstName:    update.Message.From.FirstName,
-				LastName:     update.Message.From.LastName,
-				ChatArchive:  []string{update.Message.Text},
-			}
+		message := ChatMessage{
+			WelcomeMessage: "Псссст, я смотрю ты первый раз тут, хочешь немного приколов для даунов?",
 		}
 
-		switch update.Message.Text {
+		var userName string
+		var lastName string
+		var firstName string
 
-		case "да", "Да", "yes", "Yes", "y", "д":
-			if _, ok := users[update.Message.From.ID]; ok {
+		messageExist := update.CallbackQuery != nil || update.Message != nil
 
-				pic, err := getNotSeenPicture(users[update.Message.From.ID].SeenJokes, update.Message.From.ID)
-				if err != nil {
-					bot.Send(tgbotapi.NewMessage(
-						update.Message.Chat.ID,
-						"Случилась неудача, попробуй ещё раз",
-					))
-				}
-
-				_, error := bot.Send(tgbotapi.NewPhotoShare(update.Message.Chat.ID, pic))
-				if error != nil {
-					bot.Send(tgbotapi.NewMessage(
-						update.Message.Chat.ID,
-						"Случилась неудача, попробуй ещё раз",
-					))
-				}
-				users[update.Message.From.ID].SeenJokes = append(users[update.Message.From.ID].SeenJokes, pic)
+		if update.Message != nil {
+			message.UserID = update.Message.From.ID
+			message.Text = update.Message.Text
+			message.ChatID = update.Message.Chat.ID
+			message.IsCommand = update.Message.IsCommand()
+			if len(update.Message.From.UserName) != 0 {
+				message.Name = update.Message.From.UserName
+			} else if len(update.Message.From.FirstName) != 0 {
+				message.Name = update.Message.From.FirstName
+			} else if len(update.Message.From.LastName) != 0 {
+				message.Name = update.Message.From.LastName
 			} else {
-				pic, error := pics.GetPicture(update.Message.From.ID)
-				if error != nil {
-					bot.Send(tgbotapi.NewMessage(
-						update.Message.Chat.ID,
-						"Случилась неудача, попробуй ещё раз",
-					))
-				}
+				message.Name = string(update.Message.From.ID)
+			}
 
-				_, err := bot.Send(tgbotapi.NewPhotoShare(update.Message.Chat.ID, pic))
-				if err != nil {
-					bot.Send(tgbotapi.NewMessage(
-						update.Message.Chat.ID,
-						"Случилась неудача, попробуй ещё раз",
-					))
+			userName = update.Message.From.UserName
+			lastName = update.Message.From.LastName
+			firstName = update.Message.From.FirstName
+		}
+
+		if update.CallbackQuery != nil {
+			message.UserID = update.CallbackQuery.From.ID
+			message.Text = update.CallbackQuery.Data
+			message.ChatID = update.CallbackQuery.Message.Chat.ID
+			if update.CallbackQuery.Data == "/start" || update.CallbackQuery.Data == "/tired" {
+				message.IsCommand = true
+			}
+			if len(update.CallbackQuery.From.UserName) != 0 {
+				message.Name = update.CallbackQuery.From.UserName
+			} else if len(update.CallbackQuery.From.FirstName) != 0 {
+				message.Name = update.CallbackQuery.From.FirstName
+			} else if len(update.CallbackQuery.From.LastName) != 0 {
+				message.Name = update.CallbackQuery.From.LastName
+			} else {
+				message.Name = string(update.CallbackQuery.From.ID)
+			}
+
+			userName = update.CallbackQuery.From.UserName
+			lastName = update.CallbackQuery.From.LastName
+			firstName = update.CallbackQuery.From.FirstName
+		}
+
+		if messageExist {
+			log.Debug().Str("Message", message.Text).Int("From ID", message.UserID).Str("UserName", message.Name).Send()
+
+			if _, ok := users[message.UserID]; ok {
+				users[message.UserID].ChatArchive = append(users[message.UserID].ChatArchive, message.Text)
+
+				message.WelcomeMessage = fmt.Sprintf("О привет %s ты вернулся, хочешь ещё приколов для даунов?", message.Name)
+			} else {
+				users[message.UserID] = &User{
+					UserID:       message.UserID,
+					ChatID:       message.ChatID,
+					JokesExpires: time.Now().Add(240 * time.Hour),
+					UserName:     userName,
+					FirstName:    firstName,
+					LastName:     lastName,
+					ChatArchive:  []string{message.Text},
 				}
 			}
 
-			bot.Send(tgbotapi.NewMessage(
-				update.Message.Chat.ID,
-				"хочешь ещё?",
-			))
+			if message.IsCommand {
+				msg := tgbotapi.NewMessage(message.ChatID, message.Text)
 
-		case "нет", "н", "no", "No", "Нет":
-			bot.Send(tgbotapi.NewMessage(
-				update.Message.Chat.ID,
-				"Возвращайся когда захочешь",
-			))
-		default:
-			bot.Send(tgbotapi.NewMessage(
-				update.Message.Chat.ID,
-				welcomeMessage,
-			))
+				switch message.Text {
+				case "/start":
+					msg.ReplyMarkup = YesKeyboard
+					msg.Text = message.WelcomeMessage
+				case "/tired":
+					msg.Text = "Тут пока ничего нет :/"
+				}
 
-			for k, v := range users {
-				fmt.Printf("key[%v] value[%v]\n", k, v.UserName)
-				fmt.Printf("key[%v] value[%v]\n", k, v.FirstName)
-				fmt.Printf("key[%v] value[%v]\n", k, v.LastName)
-				fmt.Printf("key[%v] value[%v]\n", k, v.SeenJokes)
+				bot.Send(msg)
+
+			} else {
+				chatModule(message, bot)
 			}
-
 		}
 	}
 }
 
 func getNotSeenPicture(seen []string, id int) (string, error) {
 	pic, err := pics.GetPicture(id)
-
 	if err != nil {
+		log.Error().Err(err).Send()
 		return "", err
 	}
 
 	for contains(seen, pic) {
 		pic, err = pics.GetPicture(id)
+		if err != nil {
+			log.Error().Err(err).Send()
+			return "", err
+		}
 	}
 
 	return pic, nil
@@ -169,4 +236,40 @@ func contains(s []string, e string) bool {
 		}
 	}
 	return false
+}
+
+func chatModule(m ChatMessage, bot *tgbotapi.BotAPI) {
+	msg := tgbotapi.NewMessage(m.ChatID, m.Text)
+
+	switch m.Text {
+	case "да", "Да", "yes", "Yes", "y", "д":
+		pic, err := getNotSeenPicture(users[m.UserID].SeenJokes, m.UserID)
+		if err != nil {
+			bot.Send(tgbotapi.NewMessage(
+				m.ChatID,
+				"Случилась неудача, попробуй ещё раз",
+			))
+		}
+
+		_, error := bot.Send(tgbotapi.NewPhotoShare(m.ChatID, pic))
+		if error != nil {
+			bot.Send(tgbotapi.NewMessage(
+				m.ChatID,
+				"Случилась неудача, попробуй ещё раз",
+			))
+		}
+
+		msg.ReplyMarkup = YesOrNoOrTiredKeyboard
+		msg.Text = "хочешь ещё?"
+
+		users[m.UserID].SeenJokes = append(users[m.UserID].SeenJokes, pic)
+	case "нет", "н", "no", "No", "Нет":
+		msg.Text = "Возвращайся когда захочешь..."
+		msg.ReplyMarkup = ReturnKeyboard
+	default:
+		msg.Text = "Неизвестная команда, но я могу прислать тебе немного приколов для даунов, хочешь?"
+		msg.ReplyMarkup = YesKeyboard
+	}
+
+	bot.Send(msg)
 }
