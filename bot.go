@@ -14,6 +14,7 @@ import (
 	tgbotapi "gopkg.in/telegram-bot-api.v4"
 )
 
+//User struct it is representation of bot visitor
 type User struct {
 	UserID       int
 	ChatID       int64
@@ -25,8 +26,10 @@ type User struct {
 	ChatArchive  []string
 }
 
+//Users it is map of visitors where key it is ID of user
 type Users map[int]*User
 
+//ChatMessage struct represent message to bot undepend of text or callback message it
 type ChatMessage struct {
 	UserID         int
 	ChatID         int64
@@ -36,6 +39,7 @@ type ChatMessage struct {
 	IsCommand      bool
 }
 
+//YesOrNoOrTiredKeyboard Inline Keyboard with three button 'Да', 'No' and 'Я устал' as well
 var YesOrNoOrTiredKeyboard = tgbotapi.NewInlineKeyboardMarkup(
 	tgbotapi.NewInlineKeyboardRow(
 		tgbotapi.NewInlineKeyboardButtonData("да", "да"),
@@ -44,12 +48,14 @@ var YesOrNoOrTiredKeyboard = tgbotapi.NewInlineKeyboardMarkup(
 	),
 )
 
+//YesKeyboard it is Inline Keyboard for answer to chat with button 'Yes'
 var YesKeyboard = tgbotapi.NewInlineKeyboardMarkup(
 	tgbotapi.NewInlineKeyboardRow(
 		tgbotapi.NewInlineKeyboardButtonData("да", "да"),
 	),
 )
 
+//ReturnKeyboard it is Inline Keyboard for answer in chat with only one button 'Я вернулся'
 var ReturnKeyboard = tgbotapi.NewInlineKeyboardMarkup(
 	tgbotapi.NewInlineKeyboardRow(
 		tgbotapi.NewInlineKeyboardButtonData("Я вернулся", "/start"),
@@ -157,6 +163,7 @@ func main() {
 			if update.CallbackQuery.Data == "/start" || update.CallbackQuery.Data == "/tired" {
 				message.IsCommand = true
 			}
+
 			if len(update.CallbackQuery.From.UserName) != 0 {
 				message.Name = update.CallbackQuery.From.UserName
 			} else if len(update.CallbackQuery.From.FirstName) != 0 {

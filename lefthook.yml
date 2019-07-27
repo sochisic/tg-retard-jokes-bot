@@ -1,0 +1,10 @@
+pre-commit:
+  commands:
+    tests:
+      run: go test ./...
+
+    govet:
+      tags: backend style
+      files: git ls-files -m
+      glob: "*.{go}"
+      run: go vet {files}
