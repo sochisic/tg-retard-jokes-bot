@@ -1,0 +1,18 @@
+language: go
+services:
+  - docker
+branches:
+  only:
+    - "/^v\\d+\\.\\d+(\\.\\d+)?(-\\S*)?$/"
+after_success:
+  - test -n "$TRAVIS_TAG" && docker login -u=sochisic -p="$DOCKER_PASSWORD"
+  - test -n "$TRAVIS_TAG" && docker build -t sochisic/tg-retard-jokes-bot:"$TRAVIS_TAG"
+    -t sochisic/tg-retard-jokes-bot .
+  - test -n "$TRAVIS_TAG" && docker push sochisic/tg-retard-jokes-bot
+deploy:
+  - provider: script
+    skip_cleanup: true
+    script: curl -sL https://git.io/goreleaser | bash
+    on:
+      tags: true
+      condition: "$TRAVIS_OS_NAME = linux"
